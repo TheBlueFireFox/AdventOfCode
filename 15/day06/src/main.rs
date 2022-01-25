@@ -1,58 +1,120 @@
 const DATA: &str = include_str!("../input.txt");
 
 fn main() {
-    let res = one(DATA);
+    let res = two::run(DATA);
     println!("result: {}", res);
 }
 
-fn one(input: &str) -> usize {
-    let mut map = Map::new();
-    for line in input.trim().lines() {
-        let com = parser::parse(line).expect("unable to parse line");
-        match com {
-            Command::TurnOn(f, to) => map.set(f, to, true),
-            Command::Toggle(f, to) => map.toggle(f, to),
-            Command::TurnOff(f, to) => map.set(f, to, false),
-        }
-    }
+#[allow(dead_code)]
+mod one {
+    use super::*;
 
-    map.count()
-}
-
-///
-/// Coord.x is the outer coord
-/// Coord.y is the inner coord
-///
-struct Map {
-    map: [bitmaps::Bitmap<1000>; 1000],
-}
-
-impl Map {
-    fn new() -> Self {
-        Self {
-            map: [bitmaps::Bitmap::new(); 1000],
-        }
-    }
-
-    fn set(&mut self, f: Coord, to: Coord, state: bool) {
-        for row in &mut self.map[f.x..=to.x] {
-            for idx in f.y..=to.y {
-                row.set(idx, state);
+    pub(super) fn run(input: &str) -> usize {
+        let mut map = Map::new();
+        for line in input.trim().lines() {
+            let com = parser::parse(line).expect("unable to parse line");
+            match com {
+                Command::TurnOn(f, to) => map.set(f, to, true),
+                Command::Toggle(f, to) => map.toggle(f, to),
+                Command::TurnOff(f, to) => map.set(f, to, false),
             }
         }
+
+        map.count()
     }
 
-    fn toggle(&mut self, f: Coord, to: Coord) {
-        for row in &mut self.map[f.x..=to.x] {
-            for idx in f.y..=to.y {
-                let val = row.get(idx);
-                row.set(idx, !val);
+    ///
+    /// Coord.x is the outer coord
+    /// Coord.y is the inner coord
+    ///
+    struct Map {
+        map: [bitmaps::Bitmap<1000>; 1000],
+    }
+
+    impl Map {
+        fn new() -> Self {
+            Self {
+                map: [bitmaps::Bitmap::new(); 1000],
             }
         }
+
+        fn set(&mut self, f: Coord, to: Coord, state: bool) {
+            for row in &mut self.map[f.x..=to.x] {
+                for idx in f.y..=to.y {
+                    row.set(idx, state);
+                }
+            }
+        }
+
+        fn toggle(&mut self, f: Coord, to: Coord) {
+            for row in &mut self.map[f.x..=to.x] {
+                for idx in f.y..=to.y {
+                    let val = row.get(idx);
+                    row.set(idx, !val);
+                }
+            }
+        }
+
+        fn count(&self) -> usize {
+            self.map.iter().map(|inner| inner.into_iter().count()).sum()
+        }
+    }
+}
+
+mod two {
+    use super::*;
+
+    pub(super) fn run(input: &str) -> usize {
+        let mut map = Map::new();
+        for line in input.trim().lines() {
+            let com = parser::parse(line).expect("unable to parse line");
+            match com {
+                Command::TurnOn(f, to) => map.inc(f, to, 1),
+                Command::Toggle(f, to) => map.inc(f, to, 2),
+                Command::TurnOff(f, to) => map.dec(f, to),
+            }
+        }
+
+        map.sum()
     }
 
-    fn count(&self) -> usize {
-        self.map.iter().map(|inner| inner.into_iter().count()).sum()
+    ///
+    /// Coord.x is the outer coord
+    /// Coord.y is the inner coord
+    ///
+    struct Map {
+        map: Vec<Vec<usize>>,
+    }
+
+    impl Map {
+        fn new() -> Self {
+            Self {
+                map: vec![vec![0; 1000]; 1000],
+            }
+        }
+
+        fn inc(&mut self, f: Coord, to: Coord, offset: usize) {
+            for row in &mut self.map[f.x..=to.x] {
+                for cell in &mut row[f.y..=to.y] {
+                    *cell += offset;
+                }
+            }
+        }
+
+        fn dec(&mut self, f: Coord, to: Coord) {
+            for row in &mut self.map[f.x..=to.x] {
+                for cell in &mut row[f.y..=to.y] {
+                    *cell = cell.saturating_sub(1);
+                }
+            }
+        }
+
+        fn sum(&self) -> usize {
+            self.map
+                .iter()
+                .map(|inner| inner.iter().sum::<usize>())
+                .sum()
+        }
     }
 }
 
