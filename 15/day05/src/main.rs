@@ -56,110 +56,122 @@ fn one_anal(line: &str) -> (usize, usize, bool) {
 }
 
 fn two(input: &str) -> usize {
+    let input = input.trim();
+
     let mut nice = 0;
-    for line in input.trim().lines() {
-        let (double, rep, illegal) = two_anal(line);
-        if double && rep && !illegal {
+    for line in input.lines() {
+        let (overlap, rep) = two_anal(line);
+        if overlap && rep {
             nice += 1;
+            eprintln!("{}", input);
         }
     }
 
     nice
 }
 
-fn two_anal(line: &str) -> (bool, bool, bool) {
+fn two_anal(line: &str) -> (bool, bool) {
+    //eprintln!("{}", line);
+
     let line = line.trim();
+    let len = line.len() - 1;
 
-    let mut over = false;
+    // It contains at least one letter which repeats with exactly
+    // one letter between them, like xyx, abcdefeghi (efe), or even aaa.
     let mut rep = false;
-    let mut illegal = false;
 
-    for idx in 0..(line.len() - 1) {
-        let pair = &line[idx..=(idx + 1)];
+    let get = |i| &line[i..=i];
 
-        // check for repetition
-        if line.len() - 1 >= idx + 2 {
-            let idy = idx + 2;
-            let post = &line[idy..=idy];
-            let pair = &pair[0..=0];
-            if pair == post {
-                rep = true;
-            }
+    for val in 0..=(len - 2) {
+        // eprint!("len: {len} - {} - {}", get(val), get(val + 2));
+        if get(val) == get(val + 2) {
+            rep = true;
+            // eprint!(" * ");
         }
+        // eprintln!();
+    }
 
-        // check for double
-        // assuming an illegal overlap
-        let mut it = (idx + 2)..(line.len() - 1);
-        if let Some(idy) = it.next() {
-            if pair == &line[idy..=(idy + 1)] {
-                illegal = true;
-            }
-        }
-        for idy in it {
-            if pair == &line[idy..=(idy + 1)] {
-                over = true;
+    // It contains a pair of any two letters that appears at least twice in the string
+    // without overlapping, like xyxy (xy) or aabcdefgaa (aa), but not like aaa
+    // (aa, but it overlaps). => The letter might appear twice even if there is an overlap
+
+    let get = |i| &line[i..=(i + 1)];
+    let mut pairs = false;
+
+    for idx in 0..(line.len() - 2) {
+        let current = get(idx);
+
+        if let Some(idy) = line.rfind(current) {
+            if idy > idx + 1 {
+                pairs = true;
+                break;
             }
         }
     }
-    (over, rep, illegal)
+
+    (pairs, rep)
 }
 
 #[cfg(test)]
-use pretty_assertions::assert_eq;
+mod test {
 
-#[test]
-fn test_one() {
-    assert_eq!(1, one("aaa"), "aaa");
-    assert_eq!(1, one("ugknbfddgicrmopn"), "ugknbfddgicrmopn");
-    assert_eq!(0, one("jchzalrnumimnmhp"), "jchzalrnumimnmhp");
-}
+    use super::*;
+    use pretty_assertions::assert_eq;
 
-#[test]
-fn test_one_ana() {
-    assert_eq!(
-        (3, 1, false),
-        one_anal("ugknbfddgicrmopn"),
-        "ugknbfddgicrmopn"
-    );
+    #[test]
+    fn test_one() {
+        assert_eq!(1, one("aaa"), "aaa");
+        assert_eq!(1, one("ugknbfddgicrmopn"), "ugknbfddgicrmopn");
+        assert_eq!(0, one("jchzalrnumimnmhp"), "jchzalrnumimnmhp");
+    }
 
-    assert_eq!(
-        (3, 0, false),
-        one_anal("jchzalrnumimnmhp"),
-        "jchzalrnumimnmhp"
-    );
+    #[test]
+    fn test_one_ana() {
+        assert_eq!(
+            (3, 1, false),
+            one_anal("ugknbfddgicrmopn"),
+            "ugknbfddgicrmopn"
+        );
 
-    assert_eq!(
-        (5, 1, true),
-        one_anal("haegwjzuvuyypxyu"),
-        "haegwjzuvuyypxyu"
-    );
+        assert_eq!(
+            (3, 0, false),
+            one_anal("jchzalrnumimnmhp"),
+            "jchzalrnumimnmhp"
+        );
 
-    assert_eq!(
-        (1, 1, false),
-        one_anal("dvszwmarrgswjxmb"),
-        "dvszwmarrgswjxmb"
-    )
-}
+        assert_eq!(
+            (5, 1, true),
+            one_anal("haegwjzuvuyypxyu"),
+            "haegwjzuvuyypxyu"
+        );
 
-#[test]
-fn test_two_anal() {
-    assert_eq!(
-        (true, true, false),
-        two_anal("qjhvhtzxzqqjkmpb"),
-        "qjhvhtzxzqqjkmpb"
-    );
+        assert_eq!(
+            (1, 1, false),
+            one_anal("dvszwmarrgswjxmb"),
+            "dvszwmarrgswjxmb"
+        )
+    }
 
-    assert_eq!((true, true, false), two_anal("xxyxx"), "xxyxx");
+    #[test]
+    fn test_two_anal() {
+        assert_eq!(
+            (true, true),
+            two_anal("qjhvhtzxzqqjkmpb"),
+            "qjhvhtzxzqqjkmpb"
+        );
 
-    assert_eq!(
-        (true, false, false),
-        two_anal("uurcxstgmygtbstg"),
-        "uurcxstgmygtbstg"
-    );
+        assert_eq!((true, true), two_anal("xxyxx"), "xxyxx");
 
-    assert_eq!(
-        (false, true, false),
-        two_anal("ieodomkazucvgmuy"),
-        "ieodomkazucvgmuy"
-    );
+        assert_eq!(
+            (true, false),
+            two_anal("uurcxstgmygtbstg"),
+            "uurcxstgmygtbstg"
+        );
+
+        assert_eq!(
+            (false, true),
+            two_anal("ieodomkazucvgmuy"),
+            "ieodomkazucvgmuy"
+        );
+    }
 }
