@@ -1,10 +1,13 @@
+use parser::Connection;
+
 const DATA: &str = include_str!("../input.txt");
 
 fn main() {
-    let res = one(DATA);
+    let res = two(DATA);
     println!("result {}", res);
 }
 
+#[allow(dead_code)]
 fn one(input: &str) -> u16 {
     let input = input.trim();
     let mut circuit = circuit::Circuit::new();
@@ -12,9 +15,35 @@ fn one(input: &str) -> u16 {
         let conn = parser::line(line);
         circuit.add(conn);
     }
-    //let (_, a) = circuit.len();
-    // assert_eq!(0, a);
     *circuit.get("a").unwrap()
+}
+
+fn two(input: &str) -> u16 {
+    let input = input.trim();
+    let mut circuit = circuit::Circuit::new();
+    for line in input.lines() {
+        let conn = parser::line(line);
+        circuit.add(conn);
+    }
+
+    let newb = *circuit.get("a").unwrap();
+
+    let mut circuit = circuit::Circuit::new();
+
+    for line in input.lines() {
+        let conn = parser::line(line);
+        let conn = two_replace_b(conn, newb);
+        circuit.add(conn);
+    }
+
+    *circuit.get("a").unwrap()
+}
+
+fn two_replace_b(mut conn: Connection<'_>, val: u16) -> Connection<'_> {
+    if conn.to == "b" {
+        conn.ops = parser::Operations::Signal(parser::Value::Value(val));
+    }
+    conn
 }
 
 mod parser {
