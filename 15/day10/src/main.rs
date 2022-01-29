@@ -6,36 +6,32 @@ fn main() {
 }
 
 fn one(input: &str) -> usize {
-    one_inner(&input)
+    let mut input = input.to_string();
+    for _ in 0..40 {
+        input = one_inner(&input);
+    }
+    input.len()
 }
-fn one_inner(input: &str) -> usize {
-    let mut total = 0;
+fn one_inner(input: &str) -> String {
+    let mut result = String::new();
 
     let mut it = input.chars();
 
     let mut last = it.next().unwrap();
-    let mut count = 1.0f64;
+    let mut count = 1u64;
 
-    let ceil = |v: f64| v.log10().floor() as usize + 1;
+    let mut append = |count, value| result = format!("{}{}{}", result, count, value);
 
     while let Some(curr) = it.next() {
         if last == curr {
-            count += 1.0;
+            count += 1;
         } else {
-            total += ceil(count) + 1;
-            count = 1.0;
+            append(count, last);
+            count = 1;
         }
         last = curr;
     }
+    append(count, last);
 
-    total += ceil(count) + 1;
-
-    total
-}
-
-#[test]
-fn test_one() {
-    assert_eq!(2, one_inner("1"), "1");
-    assert_eq!(2, one_inner("11"), "11");
-    assert_eq!(4, one_inner("21"), "21");
+    result
 }
