@@ -1,7 +1,4 @@
-use std::{
-    bitmaps::Bitmap,
-    collections::{BinaryHeap, HashMap},
-};
+use std::collections::HashMap;
 
 const DATA: &str = include_str!("../input.txt");
 
@@ -11,7 +8,7 @@ fn main() {
     println!("result {res}");
 }
 
-fn one(input: &str) -> usize {
+fn one(input: &str) -> u64 {
     // load in all nodes
     let mut map = Map::new();
 
@@ -20,33 +17,32 @@ fn one(input: &str) -> usize {
         map.add(path);
     }
 
-    // Dijkstra Approach https://www.baeldung.com/cs/shortest-path-visiting-all-nodes
-    let mut cost = vec![vec![usize::MAX; map.len()]; map.len()];
-    let mut pq = BinaryHeap::new();
-
-    todo!()
+    tsp(&map)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Node {
-    id: usize,
-    bitmask: Bitmap<128>,
-    cost: usize,
-}
+/// brute force
+fn tsp(graph: &Map<'_>) -> u64 {
+    use itertools::Itertools;
 
-impl PartialOrd for Node {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+    let mut min = !0;
+    // check all permutations
+    'outer: for perm in (0..graph.len()).into_iter().permutations(graph.len()) {
+        // will go over all the cities
+        let mut cost = 0;
+        for pair in perm.windows(2) {
+            if let Some(v) = graph.paths[pair[0]][pair[1]] {
+                // there will only be a value if there is a path to the next city
+                cost += v;
+            } else {
+                continue 'outer;
+            }
+        }
+
+        // Will only be true if there was a path to all cities
+        min = min.min(cost);
     }
-}
 
-impl Ord for Node {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other
-            .cost
-            .cmp(&self.cost)
-            .then_with(|| self.id.cmp(&other.id))
-    }
+    min
 }
 
 /// Graph
@@ -59,7 +55,7 @@ impl Ord for Node {
 #[derive(Debug, Default)]
 struct Map<'data> {
     map: HashMap<&'data str, usize>,
-    paths: Vec<Vec<u64>>,
+    paths: Vec<Vec<Option<u64>>>,
 }
 
 impl<'data> Map<'data> {
@@ -88,7 +84,8 @@ impl<'data> Map<'data> {
         let from = insert(path.from);
         let to = insert(path.to);
 
-        self.paths[from][to] = path.weight;
+        self.paths[from][to] = Some(path.weight);
+        self.paths[to][from] = Some(path.weight);
     }
 }
 
