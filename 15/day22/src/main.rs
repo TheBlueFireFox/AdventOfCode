@@ -26,10 +26,11 @@ fn pre_effects(
     active: &mut [usize; Attacks::COUNT],
 ) -> Option<usize> {
     // do effects on boss
-    for (idx, count) in active.iter_mut().enumerate() {
-        if *count == 0 {
-            continue;
-        }
+    for (idx, count) in active
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, count)| **count > 0)
+    {
         *count -= 1;
 
         match Attacks::from_repr(idx).unwrap() {
@@ -84,53 +85,51 @@ fn minimax(
     } else {
         // mine
         let mut min = None;
-        for (att, cost, id) in Attacks::iter().map(|att| (att, att.mana(), att as usize)) {
+        for (id, att, cost, durr) in Attacks::iter()
+            .map(|att| (att as usize, att, att.mana(), att.duration()))
             // check if effect is active => don't try it out
-            if active[id] > 0 {
-                continue;
-            }
-
+            .filter(|(_, _, cost, _)| *cost > 0)
+        {
             let mut me = me.clone();
             let mut boss = boss.clone();
             let mut mana = mana.clone();
             let mut active = active.clone();
 
-            // set the duration if the effect
-            active[id] = att.duration() - 1;
+            // set the duration of the effect
+            active[id] = durr;
 
-            // check if there is enough mana
+            // check if there is enough mana for effect
             if cost >= me.mana {
                 // no path
                 continue;
             }
+
             me.mana -= cost;
             mana += cost;
 
             // check if new path will be cheaper then previous winning ones
             // (pruning step)
-            if let Some(min) = min {
-                if min < mana {
+            if let Some(other) = min {
+                if other > mana {
                     continue;
                 }
             }
 
             let mut check_win = |mana: usize| {
                 // found a winning path
-                if let Some(other) = min {
-                    // cmp
-                    if other > mana {
-                        min = Some(mana);
-                    }
+                let t = if let Some(other) = min {
+                    std::cmp::min(other, mana)
                 } else {
-                    min = Some(mana)
-                }
+                    mana
+                };
+                min = Some(t);
             };
 
             let mut do_damage = |damage: usize| {
                 // do the damage
                 boss.hit_points = boss.hit_points.saturating_sub(damage);
                 if boss.hit_points == 0 {
-                    // we don't have to continue to try this path
+                    // winning path, so check if better score
                     check_win(mana);
                     true
                 } else {
@@ -153,10 +152,7 @@ fn minimax(
                 Attacks::Shield => {
                     me.armor += 7;
                 }
-                Attacks::Poison => {
-                    // no direct effect
-                }
-                Attacks::Recharge => {
+                Attacks::Poison | Attacks::Recharge => {
                     // no direct effect
                 }
             }
@@ -193,8 +189,8 @@ impl Attacks {
 
     fn duration(&self) -> usize {
         match self {
-            Attacks::MagicMissile => 1,
-            Attacks::Drain => 1,
+            Attacks::MagicMissile => 0,
+            Attacks::Drain => 0,
             Attacks::Shield => 6,
             Attacks::Poison => 6,
             Attacks::Recharge => 5,
