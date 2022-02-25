@@ -101,8 +101,8 @@ mod floorplan {
 
     const FLOORS: usize = 4;
 
-    #[derive(Debug, Clone)]
-    struct Floor<'name> {
+    #[derive(Debug, Clone, Default)]
+    pub struct Floor<'name> {
         /// Stores the single generators
         single_gen: HashSet<Type<'name>>,
         /// Stores the single chips
@@ -111,7 +111,7 @@ mod floorplan {
         pair: HashSet<Type<'name>>,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, Default)]
     pub struct FloorPlan<'name> {
         floors: [Floor<'name>; FLOORS],
         size: usize,
@@ -242,28 +242,6 @@ mod floorplan {
 
         pub fn len(&self) -> usize {
             self.size
-        }
-    }
-
-    impl<'name> Default for FloorPlan<'name> {
-        fn default() -> Self {
-            // SAFETY: used unsafe here according to the module documentation
-            // https://doc.rust-lang.org/stable/std/mem/union.MaybeUninit.html#initializing-an-array-element-by-element
-
-            use std::mem::{self, MaybeUninit};
-            let mut floors: [MaybeUninit<HashSet<Type<'name>>>; FLOORS] =
-                unsafe { MaybeUninit::uninit().assume_init() };
-
-            for f in &mut floors {
-                f.write(HashSet::with_capacity(FLOORS * 2));
-            }
-
-            // Everything is initialized. Transmute the array to the
-            // initialized type.
-            Self {
-                floors: unsafe { mem::transmute::<_, _>(floors) },
-                size: 0,
-            }
         }
     }
 }
