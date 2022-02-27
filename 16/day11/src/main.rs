@@ -6,7 +6,7 @@ use std::{
 const INPUT: &str = include_str!("../input.txt");
 
 fn main() {
-    println!("result <{}>", one());
+    println!("result <{}>", two());
 }
 
 fn one() -> usize {
@@ -15,6 +15,21 @@ fn one() -> usize {
 
 fn one_inner(input: &str) -> usize {
     let fp = parse(input).unwrap();
+    run(fp)
+}
+
+fn two() -> usize {
+    two_inner(INPUT)
+}
+
+fn two_inner(input: &str) -> usize {
+    let mut fp = parse(input).unwrap();
+    let additions = ["elerium", "dilithium"];
+    for a in additions {
+        let a = Type::Microchip(a.into());
+        fp.insert(0, a.clone());
+        fp.insert(0, a.compatible());
+    }
     run(fp)
 }
 
@@ -30,7 +45,10 @@ fn run(fp: FloorPlan) -> usize {
     let mut min = usize::MAX;
 
     while let Some((steps, fp)) = queue.pop_front() {
-        println!("{:#?}", fp);
+        if cfg!(debug_assertions) {
+            println!("{}", fp);
+        }
+
         if fp.finished() {
             min = std::cmp::min(min, steps);
             continue;
@@ -38,23 +56,73 @@ fn run(fp: FloorPlan) -> usize {
             continue;
         }
 
+        let plan = fp.plan();
+
         // possible steps
         for movement in fp.all_moves() {
-            println!("\t{movement:?}");
+            if cfg!(debug_assertions) {
+                print!("\t{movement:?} ");
+            }
             if fp.is_legal(&movement).is_some() {
-                println!("\tlegal");
+                if cfg!(debug_assertions) {
+                    print!("legal ");
+                }
+
+                // remove unneded
+                match movement {
+                    Movement::Single(Direction::Down, _) => {
+                        let mut is = true;
+                        for i in 0..fp.elevator() {
+                            if !fp.is_empty(i) {
+                                if cfg!(debug_assertions) {
+                                    println!("X");
+                                }
+                                is = false;
+                                break;
+                            }
+                        }
+                        if is {
+                            continue;
+                        }
+                    }
+                    Movement::Multiple(Direction::Down, _, _) => {
+                        // don't bring two items down
+                        continue;
+                    }
+                    _ => {}
+                }
+
                 let mut fp = fp.clone();
                 fp.transfer(movement);
+
+                let plan = fp.plan();
                 // check if new plan was visited befor
-                if visited_states.contains_key(&fp.plan()) || enqued_states.contains(&fp.plan()) {
-                    continue;
+                let s = if visited_states.contains_key(&plan) {
+                    "(visited)"
+                } else if enqued_states.contains(&plan) {
+                    "(enqued)"
+                } else {
+                    enqued_states.insert(plan);
+                    queue.push_back((steps + 1, fp));
+                    "(OK)"
+                };
+
+                if cfg!(debug_assertions) {
+                    print!("{s}");
+                } else {
+                    let _ = s;
                 }
-                queue.push_back((steps + 1, fp));
+            } else {
+                if cfg!(debug_assertions) {
+                    print!("illegal ");
+                }
+            }
+            if cfg!(debug_assertions) {
+                println!();
             }
         }
 
-        enqued_states.remove(&fp.plan());
-        visited_states.insert(fp.plan(), steps);
+        visited_states.insert(plan, steps);
     }
 
     min
@@ -98,7 +166,7 @@ fn parse(input: &str) -> Option<FloorPlan> {
     Some(fp)
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
 pub enum Type {
     Microchip(Rc<str>),
     Generator(Rc<str>),
@@ -142,21 +210,24 @@ pub enum Direction {
 }
 
 mod floorplan {
+
+    use itertools::Itertools;
+
     use super::*;
 
     const FLOORS: usize = 4;
 
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
     pub struct Floor {
         /// Stores the single generators
-        pub single_gen: HashSet<Type>,
+        pub single_gen: HashSet<Rc<str>>,
         /// Stores the single chips
-        pub single_chip: HashSet<Type>,
+        pub single_chip: HashSet<Rc<str>>,
         /// Stores all the pairs
-        pub pair: HashSet<Type>,
+        pub pair: HashSet<Rc<str>>,
     }
 
-    #[derive(Debug, Clone, Default)]
+    #[derive(Debug, Clone, Default, PartialEq, Eq)]
     pub struct FloorPlan {
         /// all the floors in the building
         floors: [Floor; FLOORS],
@@ -166,21 +237,98 @@ mod floorplan {
         size: usize,
     }
 
+    impl std::fmt::Display for FloorPlan {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let get = |i| {
+                if self.elevator == i {
+                    'E'
+                } else {
+                    char::from_digit(i as u32, 10).unwrap()
+                }
+            };
+            write!(
+                f,
+                "FloorPlan {{\n\
+                       \t{}) {:?}\n\
+                       \t{}) {:?}\n\
+                       \t{}) {:?}\n\
+                       \t{}) {:?}\n\
+                }}",
+                get(0),
+                self.floors[0],
+                get(1),
+                self.floors[1],
+                get(2),
+                self.floors[2],
+                get(3),
+                self.floors[3]
+            )
+        }
+    }
+
     impl FloorPlan {
+        pub fn elevator(&self) -> usize {
+            self.elevator
+        }
+
+        pub fn is_empty(&self, floor: usize) -> bool {
+            (self.floors[floor].single_chip.len()
+                + self.floors[floor].single_gen.len()
+                + self.floors[floor].pair.len())
+                == 0
+        }
+
         /// This will return all moves possible from this
-        /// floor
+        /// floor, this will not check if the move is
+        /// legal or not
         pub fn all_moves(&self) -> impl Iterator<Item = Movement> + '_ {
             let floor = &self.floors[self.elevator];
             let chips = floor
                 .single_chip
                 .iter()
-                .map(|c| Direction::iter().map(move |dir| Movement::Single(dir, c.clone())))
+                .map(|c| {
+                    Direction::iter()
+                        .map(move |dir| Movement::Single(dir, Type::Microchip(c.clone())))
+                })
+                .flatten();
+
+            let chips_mul = floor
+                .single_chip
+                .iter()
+                .combinations(2)
+                .map(|c| {
+                    Direction::iter().map(move |dir| {
+                        Movement::Multiple(
+                            dir,
+                            Type::Microchip(c[0].clone()),
+                            Type::Microchip(c[1].clone()),
+                        )
+                    })
+                })
                 .flatten();
 
             let gens = floor
                 .single_gen
                 .iter()
-                .map(|c| Direction::iter().map(move |dir| Movement::Single(dir, c.clone())))
+                .map(|c| {
+                    Direction::iter()
+                        .map(move |dir| Movement::Single(dir, Type::Generator(c.clone())))
+                })
+                .flatten();
+
+            let gens_mul = floor
+                .single_gen
+                .iter()
+                .combinations(2)
+                .map(|c| {
+                    Direction::iter().map(move |dir| {
+                        Movement::Multiple(
+                            dir,
+                            Type::Generator(c[0].clone()),
+                            Type::Generator(c[1].clone()),
+                        )
+                    })
+                })
                 .flatten();
 
             let either = floor
@@ -190,71 +338,89 @@ mod floorplan {
                     Direction::iter()
                         .map(move |dir| {
                             [
-                                Movement::Single(dir, c.microchip()),
-                                Movement::Single(dir, c.generator()),
-                                Movement::Multiple(dir, c.microchip(), c.generator()),
+                                Movement::Single(dir, Type::Microchip(c.clone())),
+                                Movement::Single(dir, Type::Generator(c.clone())),
+                                Movement::Multiple(
+                                    dir,
+                                    Type::Microchip(c.clone()),
+                                    Type::Generator(c.clone()),
+                                ),
                             ]
                         })
                         .flatten()
                 })
                 .flatten();
 
-            chips
+            either
+                .chain(gens_mul)
+                .chain(chips_mul)
+                .chain(chips)
                 .chain(gens)
-                .chain(either)
-                .filter(|e| self.is_legal(e).is_none())
-        }
-
-        pub fn plan(&self) -> [(usize, usize); FLOORS] {
-            let mut floors = [(0, 0); FLOORS];
-
-            for (idx, f) in self.floors.iter().enumerate() {
-                let chip = f.single_chip.len() + f.pair.len();
-                let gen = f.single_gen.len() + f.pair.len();
-
-                floors[idx] = (chip, gen);
-            }
-            floors
         }
 
         pub fn finished(&self) -> bool {
             self.floors[FLOORS - 1].pair.len() == self.len() / 2
         }
 
+        pub fn plan(&self) -> (u8, [(u8, u8, u8); FLOORS]) {
+            let mut floors: [_; FLOORS] = Default::default();
+            for (o, f) in std::iter::zip(&self.floors, &mut floors[..]) {
+                // let mut c: Vec<_> = o.single_chip.iter().map(|c| c.clone()).collect();
+                // c.sort();
+                // let mut g: Vec<_> = o.single_gen.iter().map(|c| c.clone()).collect();
+                // g.sort();
+                *f = (
+                    o.single_chip.len() as _,
+                    o.single_gen.len() as _,
+                    o.pair.len() as _,
+                );
+            }
+
+            (self.elevator as _, floors)
+        }
+
         /// This is unsafe as it doesn't check if the transfer
-        /// goes against the transfer rules
+        /// goes against the transfer rules - this does not
+        /// change the elevator position but will return the
+        /// next floor id.
         /// This might panic if the direction is incorrect
-        unsafe fn transfer_element(&mut self, dir: Direction, thing: &Type) {
-            let (from, to) = self
-                .direction(dir)
-                .expect("the direction should have been legal");
+        unsafe fn transfer_element(&mut self, dir: Direction, thing: &Type) -> usize {
+            let next = self.direction(dir);
+            let (from, to) = next.expect("the direction should have been legal");
 
             match thing {
-                Type::Microchip(_) => {
-                    if !self.floors[from].single_chip.remove(thing) {
-                        self.floors[from].pair.remove(&thing.general());
-                        self.floors[from].single_gen.insert(thing.compatible());
+                Type::Microchip(thing) => {
+                    let thing = thing.clone();
+                    // moving from this floor
+                    if !self.floors[from].single_chip.remove(&thing) {
+                        self.floors[from].pair.remove(&thing);
+                        self.floors[from].single_gen.insert(thing.clone());
                     };
 
-                    if self.floors[to].single_gen.remove(&thing.compatible()) {
-                        self.floors[to].pair.insert(thing.general());
+                    // moving here
+                    if self.floors[to].single_gen.remove(&thing) {
+                        self.floors[to].pair.insert(thing);
                     } else {
-                        self.floors[to].single_chip.insert(thing.clone());
+                        self.floors[to].single_chip.insert(thing);
                     }
                 }
-                Type::Generator(_) => {
-                    if !self.floors[from].single_gen.remove(thing) {
-                        self.floors[from].pair.remove(thing);
-                        self.floors[from].single_chip.insert(thing.compatible());
+                Type::Generator(thing) => {
+                    let thing = thing.clone();
+                    // moving from here
+                    if !self.floors[from].single_gen.remove(&thing) {
+                        self.floors[from].pair.remove(&thing);
+                        self.floors[from].single_chip.insert(thing.clone());
                     };
 
-                    if self.floors[to].single_chip.remove(&thing.compatible()) {
-                        self.floors[to].pair.insert(thing.general());
+                    // to here
+                    if self.floors[to].single_chip.remove(&thing.clone()) {
+                        self.floors[to].pair.insert(thing.clone());
                     } else {
-                        self.floors[to].single_chip.insert(thing.clone());
+                        self.floors[to].single_gen.insert(thing.clone());
                     }
                 }
             }
+            to
         }
 
         /// Will transfer the given
@@ -262,15 +428,16 @@ mod floorplan {
             self.is_legal(&moves)?;
             // SAFETY: we checked if the given move is legal above this
             // line, so transfering does not go against the rules given
-            unsafe {
+            let to = unsafe {
                 match moves {
                     Movement::Single(dir, ref thing) => self.transfer_element(dir, thing),
                     Movement::Multiple(dir, ref one, ref two) => {
                         self.transfer_element(dir, one);
-                        self.transfer_element(dir, two);
+                        self.transfer_element(dir, two)
                     }
                 }
-            }
+            };
+            self.elevator = to;
             Some(())
         }
 
@@ -289,75 +456,121 @@ mod floorplan {
 
         /// Will only check if the move is legal or not.
         pub fn is_legal(&self, moves: &Movement) -> Option<()> {
-            let map_floor = |(from, to)| (&self.floors[from], &self.floors[to]);
+            let map_floor = |(a, b)| (&self.floors[a], &self.floors[b]);
 
             // check next floor
             match moves {
                 Movement::Single(dir, a) => {
-                    let (to, from) = self.direction(*dir)?;
-                    let (to_floor, from_floor) = map_floor((to, from));
+                    let (from, to) = self.direction(*dir)?;
+                    let (from_floor, to_floor) = map_floor((from, to));
 
                     match a {
-                        Type::Microchip(_) => {
+                        Type::Microchip(a) => {
                             // check if fitting generator is on new floor
                             // or that there currently is no free generator
                             // there
                             // An RTG powering a microchip is still dangerous
                             // to other microchips.
-                            let new = to_floor.pair.is_empty()
-                                && (to_floor.single_gen.is_empty()
-                                    || to_floor.single_gen.contains(&a.compatible()));
+                            let new = (to_floor.pair.is_empty() && to_floor.single_gen.is_empty())
+                                || to_floor.single_gen.contains(a);
 
                             // check that the state of the old floor will not
                             // be illegal now that the chip is gone, so
                             // that the now possibly single generator will not
                             // destroy the other chips
-                            let old = from_floor.pair.len() > 1
-                                && (from_floor.pair.contains(&a.general())
-                                    && from_floor.single_chip.len() > 0);
+                            //
+                            // moving a chip will not do much in the old floor
+                            // (max a single free generator)
+                            let old = true;
 
                             new && old
                         }
-                        Type::Generator(_) => {
+                        Type::Generator(a) => {
                             // same process as for the chip, just now
                             // for the generator
 
                             // new floor
-                            let new = to_floor.single_chip.is_empty()
-                                || to_floor.single_chip.contains(&a.compatible());
+                            let new =
+                                to_floor.single_chip.is_empty() || to_floor.single_chip.contains(a);
 
                             // old floor
-                            let old = from_floor.pair.contains(&a.general())
-                                && from_floor.single_gen.len() > 0;
+                            let old = !(from_floor.pair.contains(a)
+                                && (from_floor.single_gen.len() > 0 || from_floor.pair.len() > 1));
 
                             new && old
                         }
                     }
                 }
                 Movement::Multiple(dir, a, b) => {
-                    let (to, from) = self.direction(*dir)?;
-                    let (to_floor, _) = map_floor((to, from));
+                    let (from, to) = self.direction(*dir)?;
+                    let (from_floor, to_floor) = map_floor((from, to));
 
                     match (a, b) {
                         (Type::Microchip(m), Type::Generator(g))
                         | (Type::Generator(g), Type::Microchip(m)) => {
                             // if they are the same type, we can just
+                            // move them; otherwise we are not allowed to
                             // move them
-                            // An RTG powering a microchip is still
-                            // dangerous to other microchips.
-                            m == g && to_floor.single_chip.len() > 0
+                            m == g
                         }
-                        (a, b) => {
-                            // we can check here both generators and microchip
+                        (Type::Microchip(a), Type::Microchip(b)) => {
+                            // we can only move the chips, if the next floor
+                            // has no generators or both activate their own gens
+                            //
+                            // An RTG powering a microchip is still dangerous
+                            // to other microchips.
+                            let new = match to_floor.single_gen.len() {
+                                0 => to_floor.pair.is_empty(),
+                                1 => false,
+                                _ => {
+                                    to_floor.single_gen.contains(a)
+                                        && to_floor.single_gen.contains(b)
+                                }
+                            };
+
+                            // as this situation can only happen from single_chip
+                            // we don't have to check the old floor
+                            let old = true;
+
+                            new && old
+                        }
+                        (Type::Generator(a), Type::Generator(b)) => {
+                            // we can check here both generators
                             // at the same time
                             //
                             // if one of the two are legal, then we know
                             // that either the next floor is empty or
                             // that one of them has activated a microchip -
-                            // and we know that the previous floor is okay
-                            // then as well.
-                            self.is_legal(&Movement::Single(*dir, a.clone())).is_some()
-                                || self.is_legal(&Movement::Single(*dir, b.clone())).is_some()
+                            // without there beeing an other one left
+                            let new = match to_floor.single_chip.len() {
+                                0 => true,
+                                1 => {
+                                    to_floor.single_chip.contains(a)
+                                        || to_floor.single_chip.contains(b)
+                                }
+                                2 => {
+                                    to_floor.single_chip.contains(a)
+                                        && to_floor.single_chip.contains(b)
+                                }
+                                _ => false,
+                            };
+
+                            let old = match from_floor.pair.len() {
+                                0 => true,
+                                1 => {
+                                    from_floor.single_gen.len() == 0
+                                        && (from_floor.pair.contains(a)
+                                            || from_floor.pair.contains(b))
+                                }
+                                2 => {
+                                    from_floor.single_gen.len() == 0
+                                        && from_floor.pair.contains(a)
+                                        && from_floor.pair.contains(b)
+                                }
+                                _ => false,
+                            };
+
+                            new && old
                         }
                     }
                 }
@@ -371,22 +584,22 @@ mod floorplan {
         pub fn insert(&mut self, idx: usize, value: Type) -> Option<()> {
             if let Some(floor) = self.floors.get_mut(idx) {
                 match value {
-                    Type::Microchip(_) => {
+                    Type::Microchip(value) => {
                         // check if value has a pair
-                        if floor.single_gen.remove(&value.compatible()) {
+                        if floor.single_gen.remove(&value) {
                             // using the general representation for
                             // consistency
-                            floor.pair.insert(value.general());
+                            floor.pair.insert(value);
                         } else {
                             floor.single_chip.insert(value);
                         }
                     }
-                    Type::Generator(_) => {
+                    Type::Generator(value) => {
                         // check if value has a pair
-                        if floor.single_chip.remove(&value.compatible()) {
+                        if floor.single_chip.remove(&value) {
                             // using the general representation for
                             // consistency
-                            floor.pair.insert(value.general());
+                            floor.pair.insert(value);
                         } else {
                             floor.single_gen.insert(value);
                         }
