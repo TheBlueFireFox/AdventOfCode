@@ -1,8 +1,5 @@
 use floorplan::*;
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet, VecDeque};
 const INPUT: &str = include_str!("../input.txt");
 
 fn main() {
@@ -33,7 +30,7 @@ fn two_inner(input: &str) -> usize {
     run(fp)
 }
 
-fn run(fp: FloorPlan) -> usize {
+fn run<'name>(fp: FloorPlan<'name>) -> usize {
     let mut queue = VecDeque::new();
 
     let mut visited_states = HashMap::new();
@@ -97,7 +94,7 @@ fn run(fp: FloorPlan) -> usize {
 
                 let plan = fp.plan();
                 // check if new plan was visited befor
-                let s = if visited_states.contains_key(&plan) {
+                let _s = if visited_states.contains_key(&plan) {
                     "(visited)"
                 } else if enqued_states.contains(&plan) {
                     "(enqued)"
@@ -108,9 +105,7 @@ fn run(fp: FloorPlan) -> usize {
                 };
 
                 if cfg!(debug_assertions) {
-                    print!("{s}");
-                } else {
-                    let _ = s;
+                    print!("{_s}");
                 }
             } else {
                 if cfg!(debug_assertions) {
@@ -128,7 +123,7 @@ fn run(fp: FloorPlan) -> usize {
     min
 }
 
-fn parse(input: &str) -> Option<FloorPlan> {
+fn parse(input: &str) -> Option<FloorPlan<'_>> {
     let mut fp = FloorPlan::default();
 
     for (idx, line) in input
@@ -153,8 +148,8 @@ fn parse(input: &str) -> Option<FloorPlan> {
             let entry = entry.trim_end_matches("-compatible");
 
             let is = match is {
-                "microchip" => Type::Microchip(entry.into()),
-                "generator" => Type::Generator(entry.into()),
+                "microchip" => Type::Microchip(entry),
+                "generator" => Type::Generator(entry),
                 "relevant" => continue,
                 _ => unreachable!(),
             };
@@ -167,15 +162,15 @@ fn parse(input: &str) -> Option<FloorPlan> {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, PartialOrd, Ord)]
-pub enum Type {
-    Microchip(Rc<str>),
-    Generator(Rc<str>),
+pub enum Type<'name> {
+    Microchip(&'name str),
+    Generator(&'name str),
 }
 
-impl Type {
+impl Type<'_> {
     pub fn general(&self) -> Self {
         match self {
-            Type::Microchip(name) | Type::Generator(name) => Type::Microchip(name.clone()),
+            Type::Microchip(name) | Type::Generator(name) => Type::Microchip(name),
         }
     }
 
@@ -189,16 +184,16 @@ impl Type {
 
     pub fn compatible(&self) -> Self {
         match self {
-            Type::Microchip(name) => Type::Generator(name.clone()),
-            Type::Generator(name) => Type::Microchip(name.clone()),
+            Type::Microchip(name) => Type::Generator(name),
+            Type::Generator(name) => Type::Microchip(name),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Movement {
-    Single(Direction, Type),
-    Multiple(Direction, Type, Type),
+pub enum Movement<'name> {
+    Single(Direction, Type<'name>),
+    Multiple(Direction, Type<'name>, Type<'name>),
 }
 
 use strum::IntoEnumIterator;
@@ -218,26 +213,26 @@ mod floorplan {
     const FLOORS: usize = 4;
 
     #[derive(Debug, Clone, Default, PartialEq, Eq)]
-    pub struct Floor {
+    pub struct Floor<'name> {
         /// Stores the single generators
-        pub single_gen: HashSet<Rc<str>>,
+        pub single_gen: HashSet<&'name str>,
         /// Stores the single chips
-        pub single_chip: HashSet<Rc<str>>,
+        pub single_chip: HashSet<&'name str>,
         /// Stores all the pairs
-        pub pair: HashSet<Rc<str>>,
+        pub pair: HashSet<&'name str>,
     }
 
     #[derive(Debug, Clone, Default, PartialEq, Eq)]
-    pub struct FloorPlan {
+    pub struct FloorPlan<'name> {
         /// all the floors in the building
-        floors: [Floor; FLOORS],
+        floors: [Floor<'name>; FLOORS],
         /// where the elevator currently is
         elevator: usize,
         /// how many floors there are
         size: usize,
     }
 
-    impl std::fmt::Display for FloorPlan {
+    impl std::fmt::Display for FloorPlan<'_> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             let get = |i| {
                 if self.elevator == i {
@@ -266,7 +261,7 @@ mod floorplan {
         }
     }
 
-    impl FloorPlan {
+    impl<'name> FloorPlan<'name> {
         pub fn elevator(&self) -> usize {
             self.elevator
         }
@@ -281,14 +276,13 @@ mod floorplan {
         /// This will return all moves possible from this
         /// floor, this will not check if the move is
         /// legal or not
-        pub fn all_moves(&self) -> impl Iterator<Item = Movement> + '_ {
+        pub fn all_moves(&self) -> impl Iterator<Item = Movement<'name>> + '_ {
             let floor = &self.floors[self.elevator];
             let chips = floor
                 .single_chip
                 .iter()
                 .map(|c| {
-                    Direction::iter()
-                        .map(move |dir| Movement::Single(dir, Type::Microchip(c.clone())))
+                    Direction::iter().map(move |dir| Movement::Single(dir, Type::Microchip(c)))
                 })
                 .flatten();
 
@@ -298,11 +292,7 @@ mod floorplan {
                 .combinations(2)
                 .map(|c| {
                     Direction::iter().map(move |dir| {
-                        Movement::Multiple(
-                            dir,
-                            Type::Microchip(c[0].clone()),
-                            Type::Microchip(c[1].clone()),
-                        )
+                        Movement::Multiple(dir, Type::Microchip(c[0]), Type::Microchip(c[1]))
                     })
                 })
                 .flatten();
@@ -311,8 +301,7 @@ mod floorplan {
                 .single_gen
                 .iter()
                 .map(|c| {
-                    Direction::iter()
-                        .map(move |dir| Movement::Single(dir, Type::Generator(c.clone())))
+                    Direction::iter().map(move |dir| Movement::Single(dir, Type::Generator(c)))
                 })
                 .flatten();
 
@@ -322,11 +311,7 @@ mod floorplan {
                 .combinations(2)
                 .map(|c| {
                     Direction::iter().map(move |dir| {
-                        Movement::Multiple(
-                            dir,
-                            Type::Generator(c[0].clone()),
-                            Type::Generator(c[1].clone()),
-                        )
+                        Movement::Multiple(dir, Type::Generator(c[0]), Type::Generator(c[1]))
                     })
                 })
                 .flatten();
@@ -338,8 +323,8 @@ mod floorplan {
                     Direction::iter()
                         .map(move |dir| {
                             [
-                                Movement::Single(dir, Type::Microchip(c.clone())),
-                                Movement::Single(dir, Type::Generator(c.clone())),
+                                Movement::Single(dir, Type::Microchip(c)),
+                                Movement::Single(dir, Type::Generator(c)),
                                 Movement::Multiple(
                                     dir,
                                     Type::Microchip(c.clone()),
@@ -365,10 +350,6 @@ mod floorplan {
         pub fn plan(&self) -> (u8, [(u8, u8, u8); FLOORS]) {
             let mut floors: [_; FLOORS] = Default::default();
             for (o, f) in std::iter::zip(&self.floors, &mut floors[..]) {
-                // let mut c: Vec<_> = o.single_chip.iter().map(|c| c.clone()).collect();
-                // c.sort();
-                // let mut g: Vec<_> = o.single_gen.iter().map(|c| c.clone()).collect();
-                // g.sort();
                 *f = (
                     o.single_chip.len() as _,
                     o.single_gen.len() as _,
@@ -384,7 +365,7 @@ mod floorplan {
         /// change the elevator position but will return the
         /// next floor id.
         /// This might panic if the direction is incorrect
-        unsafe fn transfer_element(&mut self, dir: Direction, thing: &Type) -> usize {
+        unsafe fn transfer_element(&mut self, dir: Direction, thing: &Type<'name>) -> usize {
             let next = self.direction(dir);
             let (from, to) = next.expect("the direction should have been legal");
 
@@ -424,7 +405,7 @@ mod floorplan {
         }
 
         /// Will transfer the given
-        pub fn transfer(&mut self, moves: Movement) -> Option<()> {
+        pub fn transfer(&mut self, moves: Movement<'name>) -> Option<()> {
             self.is_legal(&moves)?;
             // SAFETY: we checked if the given move is legal above this
             // line, so transfering does not go against the rules given
@@ -455,7 +436,7 @@ mod floorplan {
         }
 
         /// Will only check if the move is legal or not.
-        pub fn is_legal(&self, moves: &Movement) -> Option<()> {
+        pub fn is_legal(&self, moves: &Movement<'_>) -> Option<()> {
             let map_floor = |(a, b)| (&self.floors[a], &self.floors[b]);
 
             // check next floor
@@ -581,7 +562,7 @@ mod floorplan {
         /// Will blindly insert the information into the floor plan
         /// as I assume that the values can be of unfitting order and
         /// that the input is alredy in a valid state.
-        pub fn insert(&mut self, idx: usize, value: Type) -> Option<()> {
+        pub fn insert(&mut self, idx: usize, value: Type<'name>) -> Option<()> {
             if let Some(floor) = self.floors.get_mut(idx) {
                 match value {
                     Type::Microchip(value) => {
