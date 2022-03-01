@@ -178,9 +178,13 @@ impl Key {
 
         // first
         let mut dig = md5::compute(&tmp);
+        tmp.clear();
+        let _ = write!(&mut tmp, "{:x}", dig);
 
         for _ in 0..2016 {
-            dig = md5::compute(dig.0);
+            dig = md5::compute(&tmp);
+            tmp.clear();
+            let _ = write!(&mut tmp, "{:x}", dig);
         }
 
         Self::check_key(idx, &dig)
@@ -254,5 +258,5 @@ fn test_one() {
 
 #[test]
 fn test_two() {
-    assert_eq!(22859, two_inner("abc"))
+    assert_eq!(22551, two_inner("abc"))
 }
