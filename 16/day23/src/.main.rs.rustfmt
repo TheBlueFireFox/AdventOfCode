@@ -1,0 +1,198 @@
+use std::{str::FromStr, ops::Index};
+
+const INPUT: &str = include_str!("input.txt");
+
+fn main() {
+    one();
+}
+
+fn one() {
+    let mut regs = Regs{inner:[7, 0, 0, 0]);
+    run(INPUT, &mut regs);
+}
+
+fn run(input: &str, regs: &mut Regs) {
+    let inst = parse(input).unwrap();
+    let mut inst: Vec<_> = inst.into_iter().map(Some).collect();
+
+    let mut ptr: isize = 0;
+
+    while 0 <= ptr && ptr < inst.len() as isize {
+        let c = inst[ptr as usize].clone();
+        if let Some(c) = c {
+            match c {
+                Instructions::Cpy(x, y) => match x {
+                    Either::Register(reg) => regs[y ] = regs[reg ],
+                    Either::Value(v) => regs[y ] = v,
+                },
+                Instructions::Inc(reg) => regs[reg ] += 1,
+                Instructions::Dec(reg) => regs[reg ] -= 1,
+                Instructions::Jnz(x, y) => {
+                    let v = match x {
+                        Either::Register(reg) => regs[reg ],
+                        Either::Value(v) => v,
+                    };
+
+                    let y = match y {
+                        Either::Register(reg) => regs[reg ],
+                        Either::Value(v) => v,
+                    };
+
+                    if v != 0 {
+                        ptr += y;
+                        continue;
+                    }
+                }
+                Instructions::Tgl(x) => {
+                    // find next instruction and change it
+                    let next = ptr + regs[x as usize];
+                    if next < 0 || inst.len() <= next as _ {
+                        continue;
+                    }
+
+                    let next = next as usize;
+
+                    let next_inst = inst[next].clone();
+                    if let Some(next_inst) = next_inst {
+                        // inst[x as usize];
+                        inst[next] = match next_inst {
+                            Instructions::Inc(v) => Some(Instructions::Dec(v)),
+                            Instructions::Dec(v) => Some(Instructions::Inc(v)),
+                            Instructions::Tgl(v) => Some(Instructions::Inc(v)),
+                            Instructions::Cpy(from, to) => {
+                                Some(Instructions::Jnz(from, Either::Register(to)))
+                            }
+                            Instructions::Jnz(x, y) => match y {
+                                Either::Register(v) => Some(Instructions::Cpy(x, v)),
+                                Either::Value(_) => None,
+                            },
+                        };
+                    }
+                }
+            }
+        }
+        ptr += 1;
+    }
+}
+
+fn parse(input: &str) -> Result<Vec<Instructions>, String> {
+    input
+        .lines()
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(Instructions::from_str)
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+enum Either {
+    Register(Register),
+    Value(isize),
+}
+
+#[derive(Debug, Clone)]
+enum Instructions {
+    Cpy(Either, Register),
+    Inc(Register),
+    Dec(Register),
+    Jnz(Either, Either),
+    Tgl(Register),
+}
+
+impl FromStr for Instructions {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = || format!("Unable to parse the str <{}> - invalid format", s);
+
+        let s = s.trim();
+        let (ins, x) = s.split_once(" ").ok_or_else(err)?;
+
+        let ins = match ins {
+            "cpy" => {
+                let (x, y) = x.split_once(" ").ok_or_else(err)?;
+
+                let x = match Register::from_str(x) {
+                    Ok(v) => Either::Register(v),
+                    Err(_) => Either::Value(x.parse().map_err(|_| err())?),
+                };
+
+                let y = Register::from_str(y)?;
+                Self::Cpy(x, y)
+            }
+            "inc" => Self::Inc(Register::from_str(x)?),
+            "dec" => Self::Dec(Register::from_str(x)?),
+            "jnz" => {
+                let (x, y) = x.split_once(" ").ok_or_else(err)?;
+
+                let x = match Register::from_str(x) {
+                    Ok(v) => Either::Register(v),
+                    Err(_) => Either::Value(x.parse().map_err(|_| err())?),
+                };
+
+                let y = match Register::from_str(y) {
+                    Ok(v) => Either::Register(v),
+                    Err(_) => Either::Value(y.parse().map_err(|_| err())?),
+                };
+
+                Self::Jnz(x, y)
+            }
+            "tgl" => Self::Tgl(Register::from_str(x)?),
+            _ => {
+                return Err(format!(
+                    "Unable to parse the str <{}> - invalid instruction",
+                    s
+                ))
+            }
+        };
+
+        Ok(ins)
+    }
+}
+
+struct Regs {
+    inner: [isize; 4],
+}
+
+impl Index<Register> for Regs {
+    type Output = isize; 
+    fn index(&self, index: Register) -> &Self::Output {
+        &self.inner[index as usize]
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(usize)]
+enum Register {
+    A,
+    B,
+    C,
+    D,
+}
+
+impl FromStr for Register {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "a" => Ok(Self::A),
+            "b" => Ok(Self::B),
+            "c" => Ok(Self::C),
+            "d" => Ok(Self::D),
+            _ => Err(format!("<{}> is not a valid Register", s)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const INPUT_TEST: &str = include_str!("input.txt");
+    #[test]
+    fn test_one() {
+        let mut regs = [7, 0, 0, 0];
+        run(INPUT_TEST, &mut regs);
+        assert_eq!(regs[0], 3);
+    }
+}
